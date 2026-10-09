@@ -1,0 +1,25 @@
+# LLM agent + RAG
+python-dotenv
+langchain-core
+langchain-groq
+langgraph
+langchain-community
+langchain-huggingface
+langchain-text-splitters
+chromadb
+sentence-transformers
+pymupdf
+python-pptx
+pydantic
+
+# Voice
+sounddevice
+numpy
+scipy
+openwakeword
+
+# Face
+pygame
+
+# Robot (Raspberry Pi 5 only; ROS 2 Humble provides rclpy)
+lgpio; platform_machine == "aarch64"

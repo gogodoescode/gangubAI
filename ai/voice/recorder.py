@@ -1,18 +1,8 @@
-"""Audio recorder for the GangubAI voice pipeline.
-
-Two recording modes:
-  - Adaptive (VAD): records until silence is detected.
-  - PTT (Push-to-talk): records while a threading.Event is set.
-
-Standalone test:
-    python3 -m ai.voice.recorder
-    Speak after the prompt, then stay quiet. The saved .wav path is printed.
-"""
+"""Audio recorder for the GangubAI voice pipeline: records until silence is detected."""
 
 import threading
 import time
 import wave
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -120,78 +110,3 @@ def record_adaptive(
         return None
 
     return _save_buffer(buffer, filename, samplerate)
-
-
-def record_ptt(
-    stop_event: threading.Event,
-    filename: str = config.RECORDING_OUTPUT_FILE,
-    pre_record_delay_s: float = config.PRE_RECORD_DELAY_S,
-    device: str | int | None = config.INPUT_DEVICE_NAME,
-) -> str | None:
-    """Record audio while *stop_event* is NOT set.
-
-    The caller controls when recording ends by setting *stop_event*.
-    Returns the saved WAV file path, or None if nothing was captured.
-    """
-    if pre_record_delay_s > 0:
-        time.sleep(pre_record_delay_s)
-
-    samplerate = _get_input_samplerate()
-    buffer: list[np.ndarray] = []
-
-    def _callback(indata: np.ndarray, frames: int, time_info, status):
-        buffer.append(indata.copy())
-
-    print("[Recorder] Recording (PTT)… press Enter to stop.", flush=True)
-    try:
-        with sd.InputStream(
-            samplerate=samplerate,
-            channels=1,
-            dtype="float32",
-            device=device,
-            callback=_callback,
-        ):
-            while not stop_event.is_set():
-                sd.sleep(50)
-    except Exception as exc:
-        print(f"[Recorder] InputStream error: {exc}", flush=True)
-        return None
-
-    return _save_buffer(buffer, filename, samplerate)
-
-
-# ── Standalone test ────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import sys
-
-    print("=" * 50)
-    print("GangubAI Recorder — standalone test")
-    print("=" * 50)
-
-    mode = "ptt" if "--ptt" in sys.argv else "adaptive"
-
-    if mode == "adaptive":
-        print("Mode: Adaptive VAD")
-        print(f"  silence threshold : {config.SILENCE_THRESHOLD}")
-        print(f"  silence duration  : {config.SILENCE_DURATION_S}s")
-        print(f"  max record time   : {config.MAX_RECORD_TIME_S}s")
-        print()
-        print(">> Speak now. Recording stops automatically on silence.")
-        out = record_adaptive()
-    else:
-        print("Mode: PTT (push-to-talk)")
-        print()
-        stop = threading.Event()
-        input(">> Press Enter to START recording…")
-        t = threading.Thread(target=lambda: (input(">> Press Enter to STOP…"), stop.set()), daemon=True)
-        t.start()
-        out = record_ptt(stop_event=stop)
-
-    if out:
-        path = Path(out).resolve()
-        print(f"\n✅ Recording saved: {path}")
-        size_kb = path.stat().st_size / 1024
-        print(f"   File size: {size_kb:.1f} KB")
-    else:
-        print("\n❌ Nothing was recorded.")

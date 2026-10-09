@@ -18,9 +18,9 @@ MAX_RECORD_TIME_S: float = 30.0
 # (lets the wake-word sound die out so it isn't captured).
 PRE_RECORD_DELAY_S: float = 0.4
 
-# Use ALSA aplay for TTS output (instead of PortAudio/sounddevice).
-# Enable on Raspberry Pi with I2S amplifiers (e.g., MAX98357A) where the recorder
-# holds ALSA open. When True, the script auto-detects the ALSA device.
+# TTS output backend:
+#   True  -> ALSA `aplay` with S32_LE stereo (Raspberry Pi + MAX98357A I2S amp)
+#   False -> sounddevice on OUTPUT_DEVICE_NAME (laptop / PC speakers)
 TTS_USE_APLAY: bool = True
 
 # Temporary file used for the recorded audio.
@@ -43,9 +43,6 @@ OWW_SAMPLE_RATE: int = 16000
 
 # Frame size fed to OpenWakeWord predict().
 OWW_CHUNK_SIZE: int = 1280
-
-# Enable Enter-key push-to-talk fallback on stdin.
-ENABLE_KEYBOARD_PTT: bool = True
 
 
 # -- Transcription (whisper.cpp only) -------------------------------------
@@ -75,7 +72,7 @@ PIPER_VOICE_MODEL: str = "./piper/en_GB-semaine-medium.onnx"
 # Piper raw PCM sample rate.
 PIPER_SAMPLE_RATE: int = 22050
 
-# Output device name or index. None = system default.
+# sounddevice output device name or index (TTS_USE_APLAY=False only). None = system default.
 OUTPUT_DEVICE_NAME: str | int | None = None
 
 # Raw bytes read from Piper stdout per loop iteration.
@@ -83,7 +80,6 @@ OUTPUT_DEVICE_NAME: str | int | None = None
 TTS_READ_CHUNK_BYTES: int = 32768
 
 # Output stream block size used by sounddevice.
-# Increased from 2048 to 8192 for better buffering and smoother playback.
 TTS_STREAM_BLOCKSIZE: int = 8192
 
 # Queue chunk size for TTS text. Larger chunks reduce sentence-to-sentence gaps.

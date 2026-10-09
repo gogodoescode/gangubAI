@@ -75,23 +75,6 @@
   <origin xyz="0.12 0 -0.01" rpy="0 1.5708 0"/>
 </joint>
 
-<link name="optical_sensor_link">
-    <visual>
-      <geometry><box size="0.01 0.01 0.01"/></geometry>
-      <material name="black"/>
-    </visual>
-    <inertial>
-      <mass value="0.01"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
-
-  <joint name="optical_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="optical_sensor_link"/>
-    <origin xyz="0 0 -0.025" rpy="0 1.5708 0"/> 
-  </joint>
-
   <gazebo>
     <plugin name="skid_steer_drive" filename="libgazebo_ros_diff_drive.so">
       <num_wheel_pairs>2</num_wheel_pairs>
@@ -138,26 +121,4 @@
     </plugin>
   </sensor>
 </gazebo>
-<gazebo reference="optical_sensor_link">
-    <sensor type="camera" name="optical_flow_sensor">
-      <update_rate>30.0</update_rate>
-      <camera name="head">
-        <horizontal_fov>0.5</horizontal_fov> <image>
-          <width>64</width>
-          <height>64</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.01</near>
-          <far>1.0</far>
-        </clip>
-      </camera>
-      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-        <ros>
-          <remapping>~/image_raw:=optical_flow/image</remapping>
-        </ros>
-        <frame_name>optical_sensor_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
 </robot>

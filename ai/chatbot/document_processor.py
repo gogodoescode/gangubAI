@@ -13,8 +13,10 @@ from ai.chatbot.config import (
     CHROMA_COLLECTION,
     EMBEDDING_MODEL,
     PERSIST_DIRECTORY,
-    RAG_FILES,
+    RAG_DIR,
 )
+
+SUPPORTED_EXTENSIONS = (".pptx", ".pdf")
 
 
 # ── Chunk a single file ───────────────────────────────────
@@ -69,18 +71,18 @@ def process_file_to_chunks(file_path, chunk_size=1000, chunk_overlap=200):
 
 
 # ── Build a fresh vector store from source files ──────────
-def setup_gangubai_brain(file_paths, persist_directory=PERSIST_DIRECTORY):
-    """Initialize the RAG system with document indexing."""
+def setup_gangubai_brain(source_dir=RAG_DIR, persist_directory=PERSIST_DIRECTORY):
+    """Index every supported document in *source_dir*."""
     print("📚 Loading and processing documents...")
     all_chunks = []
-    for path in file_paths:
-        if os.path.exists(path):
-            print(f"  - Processing {path}...")
-            chunks = process_file_to_chunks(path)
-            all_chunks.extend(chunks)
-            print(f"    ✓ Created {len(chunks)} chunks")
-        else:
-            print(f"  ⚠️  File not found: {path}")
+    for name in sorted(os.listdir(source_dir)):
+        if not name.lower().endswith(SUPPORTED_EXTENSIONS):
+            continue
+        path = os.path.join(source_dir, name)
+        print(f"  - Processing {path}...")
+        chunks = process_file_to_chunks(path)
+        all_chunks.extend(chunks)
+        print(f"    ✓ Created {len(chunks)} chunks")
 
     print(f"\n📊 Total chunks created: {len(all_chunks)}")
 
@@ -112,4 +114,4 @@ def get_vectorstore():
         )
         print("✅ Vector database loaded\n")
         return vs
-    return setup_gangubai_brain(RAG_FILES, PERSIST_DIRECTORY)
+    return setup_gangubai_brain()
