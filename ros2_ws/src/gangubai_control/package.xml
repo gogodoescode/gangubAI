@@ -3,7 +3,7 @@
 <package format="3">
   <name>gangubai_control</name>
   <version>0.0.1</version>
-  <description>Motor control node for L298N dual H-bridge driver on Raspberry Pi</description>
+  <description>GangubAI motor + wander controllers, URDF and Gazebo world</description>
   <maintainer email="gogodon@todo.todo">gogodon</maintainer>
   <license>MIT</license>
 
@@ -13,6 +13,8 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

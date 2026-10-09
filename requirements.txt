@@ -19,7 +19,7 @@ scipy
 openwakeword
 
 # Face
-pygame
+pygame-ce  # drop-in pygame fork; has wheels for new Pythons
 
 # Robot (Raspberry Pi 5 only; ROS 2 Humble provides rclpy)
 lgpio; platform_machine == "aarch64"
