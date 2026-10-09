@@ -1,1 +1,0 @@
-"""GangubAI Pygame frontend package."""

@@ -1,26 +1,88 @@
-"""Centralised configuration for GangubAI chatbot."""
+"""All GangubAI settings: LLM, RAG, voice, face. Edit paths here for your machine."""
 
-import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Model (Groq) ───────────────────────────────────────────
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+
+# ── LLM (Groq) ─────────────────────────────────────────────
 GROQ_MODEL = "openai/gpt-oss-20b"
 # Low temperature keeps tool calls deterministic.
 TEMPERATURE = 0.2
 
-# ── Embeddings ─────────────────────────────────────────────
-EMBEDDING_MODEL = "BAAI/bge-large-en-v1.5"
 
-# ── Vector store ───────────────────────────────────────────
+# ── RAG ────────────────────────────────────────────────────
+# Every .pptx / .pdf in SLIDES_DIR is indexed.
+# Delete PERSIST_DIRECTORY after changing the slides to rebuild the index.
+SLIDES_DIR = ASSETS_DIR / "slides"
+EMBEDDING_MODEL = "BAAI/bge-large-en-v1.5"
 CHROMA_COLLECTION = "gangubai_collection"
 PERSIST_DIRECTORY = ".gangubai_db_hf/"
 
-# ── RAG document sources (relative to repo root) ──────────
-# Every .pptx / .pdf in this folder is indexed.
-# Delete PERSIST_DIRECTORY after changing the folder contents to rebuild the index.
-RAG_DIR = os.path.join("ai", "chatbot", "Unit1")
+
+# ── Microphone / recording ─────────────────────────────────
+INPUT_DEVICE_NAME: str | None = None   # None = system default
+SILENCE_THRESHOLD = 0.006              # RMS below this counts as silence
+SILENCE_DURATION_S = 1.5               # stop recording after this much silence
+MAX_RECORD_TIME_S = 30.0
+PRE_RECORD_DELAY_S = 0.4               # let the wake-word sound die out first
+RECORDING_OUTPUT_FILE = "gangubai_input.wav"
+
+
+# ── Wake word (OpenWakeWord) ───────────────────────────────
+WAKE_WORD_MODEL = "./wakeword_models/hi_gungu_bai.onnx"
+# Optional melspectrogram.onnx / embedding_model.onnx; bundled ones are used if missing.
+WAKE_WORD_ASSETS_DIR = "./wakeword_models"
+WAKE_WORD_THRESHOLD = 0.5
+OWW_SAMPLE_RATE = 16000
+OWW_CHUNK_SIZE = 1280
+
+
+# ── Speech to text (whisper.cpp) ───────────────────────────
+WHISPER_CPP_BIN = "./whisper.cpp/build/bin/whisper-cli"
+WHISPER_CPP_MODEL = "./whisper.cpp/models/ggml-base.en.bin"
+WHISPER_LANGUAGE = "en"
+WHISPER_CPP_THREADS = 4
+WHISPER_TIMEOUT_S = 90
+
+
+# ── Text to speech (Piper) ─────────────────────────────────
+PIPER_BIN = "./piper/piper/piper"
+PIPER_VOICE_MODEL = "./piper/en_GB-semaine-medium.onnx"
+PIPER_SAMPLE_RATE = 22050
+# True  -> ALSA `aplay` with S32_LE stereo (Raspberry Pi + MAX98357A I2S amp)
+# False -> sounddevice on OUTPUT_DEVICE_NAME (laptop / PC speakers)
+TTS_USE_APLAY = True
+OUTPUT_DEVICE_NAME: str | int | None = None
+TTS_READ_CHUNK_BYTES = 32768           # ~0.7s of audio per read, avoids ALSA underruns
+TTS_STREAM_BLOCKSIZE = 8192
+TTS_QUEUE_CHUNK_CHARS = 700            # bigger chunks = fewer gaps between Piper runs
+TTS_TAIL_SILENCE_S = 0.01              # avoids clipped endings
+TTS_TIMEOUT_S = 180.0
+
+
+# ── Face (Pygame) ──────────────────────────────────────────
+FACES_DIR = ASSETS_DIR / "faces"
+FACE_HOST = "127.0.0.1"                # voice loop -> face over localhost UDP
+FACE_PORT = 8765
+WINDOW_SIZE = (800, 480)
+FACE_CANVAS_SIZE = (420, 320)
+FPS = 60
+EMOTION_FRAME_DURATIONS_MS = {
+    "neutral": 180,
+    "happy": 140,
+    "sad": 220,
+    "angry": 160,
+    "curious": 180,
+    "excited": 110,
+    "confused": 180,
+    "thinking": 150,
+}
+
 
 # ── System prompt ──────────────────────────────────────────
 SYSTEM_PROMPT = """\
