@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.tools import tool
@@ -13,57 +11,11 @@ from ai.frontend.bridge.local_queue import EmotionPublisher
 
 
 _EMOTION_PUBLISHER = EmotionPublisher()
-_ROS_EMOTION_TOPIC = "/robot_emotion"
-
-
-def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _publish_to_ros(message_json: str) -> None:
-    safe_json = message_json.replace("'", "''")
-    ros_payload = "{data: '" + safe_json + "'}"
-
-    try:
-        subprocess.Popen(
-            [
-                "ros2",
-                "topic",
-                "pub",
-                "--once",
-                _ROS_EMOTION_TOPIC,
-                "std_msgs/msg/String",
-                ros_payload,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        return
 
 
 def _publish_overlay_event(event: str, payload: dict[str, Any], source: str) -> None:
-    event_payload = json.dumps(
-        {
-            "event": event,
-            "source": source,
-            "timestamp": _utc_timestamp(),
-            "payload": payload,
-        },
-        ensure_ascii=True,
-    )
+    event_payload = json.dumps({"event": event, "payload": payload}, ensure_ascii=True)
     _EMOTION_PUBLISHER.publish("happy", source=source, payload=event_payload)
-    _publish_to_ros(
-        json.dumps(
-            {
-                "emotion": "happy",
-                "source": source,
-                "timestamp": _utc_timestamp(),
-                "payload": event_payload,
-            },
-            ensure_ascii=True,
-        )
-    )
 
 
 def _format_duration(seconds: float) -> str:
@@ -95,10 +47,7 @@ def timer(duration_seconds: float) -> str:
     _publish_overlay_event(
         event="timer_start",
         source="timer",
-        payload={
-            "duration_seconds": duration_seconds,
-            "label": "timer",
-        },
+        payload={"duration_seconds": duration_seconds},
     )
     return f"Timer started for {_format_duration(duration_seconds)}."
 
@@ -133,7 +82,6 @@ def pomodoro(
             "work_seconds": work_minutes * 60.0,
             "break_seconds": break_minutes * 60.0,
             "cycles": cycles,
-            "label": "pomodoro",
         },
     )
     return (

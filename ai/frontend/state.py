@@ -59,5 +59,3 @@ class FrontendState:
     speaking: bool = False
     running: bool = True
     fullscreen: bool = False
-    debug_visible: bool = True
-    last_manual_change_s: float = field(default_factory=time)

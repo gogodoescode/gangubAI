@@ -1,14 +1,7 @@
-"""Whisper.cpp transcription module for the GangubAI voice pipeline.
-
-Usage:
-    python3 -m ai.voice.transcriber /path/to/audio.wav
-
-This module intentionally supports whisper.cpp only.
-"""
+"""Whisper.cpp transcription module for the GangubAI voice pipeline."""
 
 from __future__ import annotations
 
-import argparse
 import re
 import subprocess
 from pathlib import Path
@@ -106,39 +99,3 @@ def transcribe(
 
     text = _extract_text_from_whisper_output(result.stdout)
     return text.strip()
-
-
-def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Transcribe WAV audio with whisper.cpp")
-    parser.add_argument("wav_path", help="Path to a WAV file")
-    parser.add_argument("--bin", dest="whisper_bin", default=config.WHISPER_CPP_BIN)
-    parser.add_argument("--model", dest="whisper_model", default=config.WHISPER_CPP_MODEL)
-    parser.add_argument("--lang", dest="language", default=config.WHISPER_LANGUAGE)
-    parser.add_argument("--threads", dest="threads", type=int, default=config.WHISPER_CPP_THREADS)
-    parser.add_argument("--timeout", dest="timeout_s", type=int, default=config.WHISPER_TIMEOUT_S)
-    return parser
-
-
-def main() -> int:
-    parser = _build_arg_parser()
-    args = parser.parse_args()
-
-    try:
-        text = transcribe(
-            wav_path=args.wav_path,
-            whisper_bin=args.whisper_bin,
-            whisper_model=args.whisper_model,
-            language=args.language,
-            threads=args.threads,
-            timeout_s=args.timeout_s,
-        )
-    except Exception as exc:
-        print(f"[Transcriber] Error: {exc}")
-        return 1
-
-    print(text)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

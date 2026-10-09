@@ -12,25 +12,23 @@ States:
 
 Inputs:
 - /wander_mode (std_msgs/String): "start" or "stop"
-- /cliff_data (sensor_msgs/Range): cliff safety sensor
-- /optical_flow_sensor/image_raw (sensor_msgs/Image): optional motion/stuck heuristic
+- /cliff_scan (sensor_msgs/LaserScan): cliff safety sensor
 
 Outputs:
 - /motor_command (std_msgs/String): forward/backward/left/right/stop
-- /wander_status (std_msgs/String): debug status
 """
 
 from __future__ import annotations
 
+import math
 import random
 import time
 from typing import Optional
 
-import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image, LaserScan, Range
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
 
@@ -51,8 +49,7 @@ class WanderControllerNode(Node):
         # Topics
         self.declare_parameter("wander_topic", "wander_mode")
         self.declare_parameter("motor_command_topic", "motor_command")
-        self.declare_parameter("cliff_topic", "cliff_data")
-        self.declare_parameter("optical_topic", "optical_flow_sensor/image_raw")
+        self.declare_parameter("cliff_topic", "cliff_scan")
 
         # Loop timing and command refresh
         self.declare_parameter("tick_hz", 10.0)
@@ -60,7 +57,6 @@ class WanderControllerNode(Node):
 
         # Cliff safety
         self.declare_parameter("require_cliff_data", False)
-        self.declare_parameter("cliff_message_type", "range")
         self.declare_parameter("cliff_topic_timeout_s", 1.0)
         self.declare_parameter("cliff_edge_distance_m", 0.14)
         self.declare_parameter("cliff_edge_margin_m", 0.005)
@@ -78,18 +74,10 @@ class WanderControllerNode(Node):
         self.declare_parameter("edge_recovery_back_s", 1.0)
         self.declare_parameter("edge_recovery_turn_s", 1.0)
 
-        # Optical-flow stuck detection (optional)
-        self.declare_parameter("optical_stuck_check", False)
-        self.declare_parameter("optical_motion_threshold", 2.0)
-        self.declare_parameter("optical_stuck_window_s", 1.5)
-        self.declare_parameter("optical_timeout_s", 1.0)
-
         # Read parameters
         self.wander_topic = str(self.get_parameter("wander_topic").value)
         self.motor_command_topic = str(self.get_parameter("motor_command_topic").value)
         self.cliff_topic = str(self.get_parameter("cliff_topic").value)
-        self.cliff_message_type = str(self.get_parameter("cliff_message_type").value).strip().lower()
-        self.optical_topic = str(self.get_parameter("optical_topic").value)
 
         self.tick_hz = float(self.get_parameter("tick_hz").value)
         self.command_refresh_s = float(self.get_parameter("command_refresh_s").value)
@@ -112,34 +100,12 @@ class WanderControllerNode(Node):
         self.edge_recovery_back_s = float(self.get_parameter("edge_recovery_back_s").value)
         self.edge_recovery_turn_s = float(self.get_parameter("edge_recovery_turn_s").value)
 
-        self.optical_stuck_check = self._as_bool(
-            self.get_parameter("optical_stuck_check").value
-        )
-        self.optical_motion_threshold = float(self.get_parameter("optical_motion_threshold").value)
-        self.optical_stuck_window_s = float(self.get_parameter("optical_stuck_window_s").value)
-        self.optical_timeout_s = float(self.get_parameter("optical_timeout_s").value)
-
         # Publishers/subscribers
         self.motor_pub = self.create_publisher(String, self.motor_command_topic, 10)
-        self.status_pub = self.create_publisher(String, "wander_status", 10)
-
-        self.wander_sub = self.create_subscription(
-            String, self.wander_topic, self._wander_mode_cb, 10
-        )
-        self.cliff_sub = None
+        self.create_subscription(String, self.wander_topic, self._wander_mode_cb, 10)
         if self.require_cliff_data:
-            if self.cliff_message_type in ("scan", "laserscan", "laser_scan"):
-                self.cliff_sub = self.create_subscription(
-                    LaserScan, self.cliff_topic, self._cliff_scan_cb, qos_profile_sensor_data
-                )
-            else:
-                self.cliff_sub = self.create_subscription(
-                    Range, self.cliff_topic, self._cliff_cb, qos_profile_sensor_data
-                )
-        self.optical_sub = None
-        if self.optical_stuck_check:
-            self.optical_sub = self.create_subscription(
-                Image, self.optical_topic, self._optical_cb, qos_profile_sensor_data
+            self.create_subscription(
+                LaserScan, self.cliff_topic, self._cliff_scan_cb, qos_profile_sensor_data
             )
 
         # Internal state
@@ -153,16 +119,9 @@ class WanderControllerNode(Node):
         self._last_cliff_min: Optional[float] = None
         self._last_cliff_max: Optional[float] = None
 
-        self._last_optical_time = 0.0
-        self._optical_motion_score = 0.0
-        self._prev_optical_frame: Optional[np.ndarray] = None
-        self._stuck_since: Optional[float] = None
-
         self._recovery_phase = ""
         self._recovery_turn_direction = "left"
         self._recovery_phase_end = 0.0
-
-        self._last_status_publish = 0.0
 
         period_s = max(0.02, 1.0 / max(0.1, self.tick_hz))
         self._timer = self.create_timer(period_s, self._tick)
@@ -171,21 +130,11 @@ class WanderControllerNode(Node):
             "Wander controller ready: mode=idle, "
             f"wander_topic=/{self.wander_topic}, motor_topic=/{self.motor_command_topic}"
         )
-        if self.optical_stuck_check:
-            self.get_logger().info(
-                f"Optical stuck detection enabled on /{self.optical_topic}."
-            )
-        else:
-            self.get_logger().info("Optical stuck detection disabled.")
         if self.require_cliff_data:
-            self.get_logger().info(
-                f"Cliff safety enabled on /{self.cliff_topic} "
-                f"(type={self.cliff_message_type})."
-            )
+            self.get_logger().info(f"Cliff safety enabled on /{self.cliff_topic}.")
         else:
             self.get_logger().warn("Cliff safety disabled (require_cliff_data=false).")
         self._publish_motor("stop", force=True)
-        self._publish_status("startup")
 
     def _publish_motor(self, action: str, force: bool = False) -> None:
         now = time.monotonic()
@@ -194,40 +143,25 @@ class WanderControllerNode(Node):
             or action != self._current_action
             or (now - self._last_action_sent) >= self.command_refresh_s
         ):
-            msg = String()
-            msg.data = action
-            self.motor_pub.publish(msg)
+            self.motor_pub.publish(String(data=action))
             self._current_action = action
             self._last_action_sent = now
-
-    def _publish_status(self, reason: str = "") -> None:
-        status = String()
-        cliff = -1.0 if self._last_cliff_range is None else self._last_cliff_range
-        status.data = (
-            f"mode={self._mode};action={self._current_action};"
-            f"cliff={cliff:.3f};optical={self._optical_motion_score:.2f};reason={reason}"
-        )
-        self.status_pub.publish(status)
 
     def _enter_idle(self, reason: str) -> None:
         prev_mode = self._mode
         self._mode = "idle"
         self._recovery_phase = ""
         self._action_end_time = 0.0
-        self._stuck_since = None
         self._publish_motor("stop", force=True)
 
         if prev_mode != "idle":
             self.get_logger().info(f"Wander -> IDLE ({reason})")
-        self._publish_status(reason)
 
     def _enter_wander(self, reason: str) -> None:
         self._mode = "wander"
         self._recovery_phase = ""
-        self._stuck_since = None
-        self._schedule_next_action(time.monotonic(), force_turn=False)
+        self._schedule_next_action(time.monotonic())
         self.get_logger().info(f"Wander -> WANDER ({reason})")
-        self._publish_status(reason)
 
     def _start_edge_recovery(self, reason: str) -> None:
         now = time.monotonic()
@@ -238,23 +172,18 @@ class WanderControllerNode(Node):
 
         self._publish_motor("backward", force=True)
         self.get_logger().warn(f"Wander -> EDGE_RECOVERY ({reason})")
-        self._publish_status(reason)
 
-    def _schedule_next_action(self, now: float, force_turn: bool) -> None:
-        if force_turn:
+    def _schedule_next_action(self, now: float) -> None:
+        roll = random.random()
+        if roll < self.forward_bias:
+            action = "forward"
+            duration = random.uniform(self.forward_min_s, self.forward_max_s)
+        elif roll < (self.forward_bias + 0.2):
             action = random.choice(("left", "right"))
             duration = random.uniform(self.turn_min_s, self.turn_max_s)
         else:
-            roll = random.random()
-            if roll < self.forward_bias:
-                action = "forward"
-                duration = random.uniform(self.forward_min_s, self.forward_max_s)
-            elif roll < (self.forward_bias + 0.2):
-                action = random.choice(("left", "right"))
-                duration = random.uniform(self.turn_min_s, self.turn_max_s)
-            else:
-                action = "backward"
-                duration = random.uniform(self.reverse_min_s, self.reverse_max_s)
+            action = "backward"
+            duration = random.uniform(self.reverse_min_s, self.reverse_max_s)
 
         self._action_end_time = now + duration
         self._publish_motor(action, force=True)
@@ -279,7 +208,7 @@ class WanderControllerNode(Node):
         if self._last_cliff_range is None:
             return False
 
-        if not np.isfinite(self._last_cliff_range):
+        if not math.isfinite(self._last_cliff_range):
             return True
 
         if self._last_cliff_range < 0.0:
@@ -288,31 +217,6 @@ class WanderControllerNode(Node):
         if self._last_cliff_min is not None and self._last_cliff_range < self._last_cliff_min:
             return True
 
-        return False
-
-    def _should_force_turn_for_stuck(self, now: float) -> bool:
-        if not self.optical_stuck_check:
-            self._stuck_since = None
-            return False
-
-        if self._current_action != "forward":
-            self._stuck_since = None
-            return False
-
-        if (now - self._last_optical_time) > self.optical_timeout_s:
-            self._stuck_since = None
-            return False
-
-        if self._optical_motion_score < self.optical_motion_threshold:
-            if self._stuck_since is None:
-                self._stuck_since = now
-                return False
-            if (now - self._stuck_since) >= self.optical_stuck_window_s:
-                self._stuck_since = None
-                return True
-            return False
-
-        self._stuck_since = None
         return False
 
     def _run_recovery_step(self, now: float) -> None:
@@ -328,7 +232,7 @@ class WanderControllerNode(Node):
         if self._recovery_phase == "turn":
             if now >= self._recovery_phase_end:
                 self._mode = "wander"
-                self._schedule_next_action(now, force_turn=False)
+                self._schedule_next_action(now)
                 self.get_logger().info("Edge recovery complete; resuming wander.")
             else:
                 self._publish_motor(self._recovery_turn_direction)
@@ -360,22 +264,12 @@ class WanderControllerNode(Node):
 
         if self._mode == "edge_recovery":
             self._run_recovery_step(now)
-            if (now - self._last_status_publish) >= 1.0:
-                self._publish_status("edge-recovery")
-                self._last_status_publish = now
             return
 
         if self._mode == "wander":
-            if self._should_force_turn_for_stuck(now):
-                self.get_logger().info("Low optical motion detected; forcing turn.")
-                self._schedule_next_action(now, force_turn=True)
-            elif now >= self._action_end_time:
-                self._schedule_next_action(now, force_turn=False)
-
+            if now >= self._action_end_time:
+                self._schedule_next_action(now)
             self._publish_motor(self._current_action)
-            if (now - self._last_status_publish) >= 1.0:
-                self._publish_status("wandering")
-                self._last_status_publish = now
 
     def _wander_mode_cb(self, msg: String) -> None:
         command = msg.data.strip().lower()
@@ -383,7 +277,6 @@ class WanderControllerNode(Node):
         if command in ("start", "wander", "on"):
             if self._mode == "wander":
                 self.get_logger().info("Wander already active; ignoring duplicate start.")
-                self._publish_status("duplicate-start")
                 return
             self._enter_wander("start-command")
             return
@@ -395,65 +288,21 @@ class WanderControllerNode(Node):
 
         self.get_logger().warn(f"Unknown wander command: '{command}'")
 
-    def _cliff_cb(self, msg: Range) -> None:
-        self._last_cliff_time = time.monotonic()
-        self._last_cliff_range = float(msg.range)
-        self._last_cliff_min = float(msg.min_range) if msg.min_range > 0.0 else None
-        self._last_cliff_max = float(msg.max_range) if msg.max_range > 0.0 else None
-
     def _cliff_scan_cb(self, msg: LaserScan) -> None:
         if not msg.ranges:
             return
 
-        finite_ranges = [r for r in msg.ranges if np.isfinite(r)]
+        finite_ranges = [r for r in msg.ranges if math.isfinite(r)]
+        self._last_cliff_time = time.monotonic()
         if not finite_ranges:
-            self._last_cliff_time = time.monotonic()
             self._last_cliff_range = float("nan")
             self._last_cliff_min = None
             self._last_cliff_max = None
             return
 
-        self._last_cliff_time = time.monotonic()
         self._last_cliff_range = float(min(finite_ranges))
         self._last_cliff_min = float(msg.range_min) if msg.range_min > 0.0 else None
         self._last_cliff_max = float(msg.range_max) if msg.range_max > 0.0 else None
-
-    @staticmethod
-    def _extract_small_grayscale(msg: Image) -> Optional[np.ndarray]:
-        if msg.width <= 0 or msg.height <= 0 or msg.step <= 0:
-            return None
-
-        row_bytes = int(msg.step)
-        expected = int(msg.height * row_bytes)
-        raw = np.frombuffer(msg.data, dtype=np.uint8)
-        if raw.size < expected:
-            return None
-
-        data = raw[:expected].reshape((msg.height, row_bytes))
-        channels = max(1, row_bytes // msg.width)
-        visible = data[:, : msg.width * channels]
-
-        if channels >= 3:
-            rgb = visible.reshape((msg.height, msg.width, channels))[:, :, :3].astype(np.float32)
-            gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
-        else:
-            gray = visible[:, : msg.width].astype(np.float32)
-
-        return gray[::4, ::4]
-
-    def _optical_cb(self, msg: Image) -> None:
-        now = time.monotonic()
-
-        frame = self._extract_small_grayscale(msg)
-        if frame is None:
-            return
-
-        if self._prev_optical_frame is not None and self._prev_optical_frame.shape == frame.shape:
-            delta = np.abs(frame - self._prev_optical_frame)
-            self._optical_motion_score = float(np.mean(delta))
-
-        self._prev_optical_frame = frame
-        self._last_optical_time = now
 
     def destroy_node(self) -> bool:
         try:

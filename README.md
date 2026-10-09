@@ -1,224 +1,83 @@
-# GangubAI: Voice + RAG + ROS Robot Control
+# GangubAI
 
-GangubAI is a multimodal assistant that combines:
-- Retrieval-augmented question answering over technical learning materials (PDF/PPTX)
-- A full voice loop (wake word, recording, transcription, response generation, TTS)
-- ROS 2 robot control tools for direct movement and autonomous wander mode
+A small voice-controlled study robot that runs on a Raspberry Pi 5.
 
-## 1) Project Scope and Relevance
+Say **"Hi Gungu Bai"** and it:
 
-This project focuses on intelligent document comparison with structured extraction, normalization, semantic similarity, OCR, and LLM-assisted change analysis.
+- answers questions about your course slides (RAG over `ai/chatbot/Unit1/`, with a citation)
+- starts a **timer** or **pomodoro** shown on its face screen
+- **moves** when asked ("go forward", "turn left", "do a spin", "stop")
+- **wanders** around on its own, using a cliff sensor so it does not fall off the table
 
-### What is already implemented in this repository
-- Structured document ingestion foundation:
-  - PDF parsing with `PyMuPDF` in `ai/chatbot/document_processor.py`
-  - PPTX slide parsing with `python-pptx` in `ai/chatbot/document_processor.py`
-- Segmentation and normalization baseline:
-  - Recursive chunking with overlap via `RecursiveCharacterTextSplitter`
-  - Metadata-enriched chunks (`source`, `type`, `number`) embedded into retrieval content
-- Semantic retrieval foundation:
-  - Embeddings (`BAAI/bge-large-en-v1.5`) + Chroma vector DB in `ai/chatbot/document_processor.py`
-  - Similarity search tool (`retrieve_context`) in `ai/chatbot/tools/rag_tools.py`
-- LLM-assisted reasoning layer:
-  - LangGraph orchestration and structured outputs in `ai/chatbot/graph.py`
-  - Tool-based decision routing between small talk, RAG, calculator, and ROS actions
+It shows how it feels on an animated Pygame face. The same robot runs on real hardware
+(L298N motors on Pi GPIO) or in Gazebo simulation.
 
-## 2) Current End-to-End Functionality (General)
+## How it fits together
 
-GangubAI currently supports the following runtime flow:
-1. Wake word detection (`ai/voice/wake_word.py`) or push-to-talk fallback
-2. Audio recording with silence-based stopping (`ai/voice/recorder.py`)
-3. Speech-to-text using `whisper.cpp` (`ai/voice/transcriber.py`)
-4. Response generation using LangGraph + tools (`ai/chatbot/graph.py`)
-5. Emotion extraction from state and optional emission hooks (`ai/voice/app.py`)
-6. Speech output with Piper TTS worker queue (`ai/voice/tts.py`)
-7. Optional ROS action execution via tools (`ai/chatbot/tools/ros_tools.py`)
-
-## 3) Architecture Overview
-
-### AI / Document pipeline
-- `ai/chatbot/document_processor.py`
-  - Parses PDF/PPTX
-  - Splits content into semantic chunks
-  - Builds or loads Chroma vector store
-- `ai/chatbot/tools/rag_tools.py`
-  - Performs top-k similarity retrieval
-- `ai/chatbot/graph.py`
-  - LangGraph state machine
-  - Structured response schemas (`ChatResponse`, `RAGResponse`)
-  - Tool routing and fallback retrieval policy
-
-### Voice pipeline
-- `ai/voice/app.py`: full orchestration loop
-- `ai/voice/wake_word.py`: OpenWakeWord integration + keyboard fallback
-- `ai/voice/recorder.py`: adaptive/ptt recording
-- `ai/voice/transcriber.py`: whisper.cpp wrapper
-- `ai/voice/tts.py`: Piper streaming TTS with sentence chunking
-- `ai/voice/config.py`: centralized runtime config
-
-### ROS pipeline
-- `ros2_ws/src/gangubai_control/gangubai_control/motor_controller_node.py`
-  - Hardware mode (RPi GPIO + L298N)
-  - Simulation mode (publishes `cmd_vel` for Gazebo)
-- `ros2_ws/src/gangubai_control/gangubai_control/wander_controller_node.py`
-  - Autonomous wander state machine
-  - Cliff safety checks + edge recovery
-  - Optional optical-flow stuck heuristic
-- `ros2_ws/src/gangubai_control/launch/motor_control.launch.py`
-  - Launches simulation/hardware stack + wander controller
-
-## 4) Implemented Technical Mapping
-
-### A) Extract structured content from PDFs
-- Text extraction from PDFs and per-page metadata tagging
-
-### B) Segment and normalize content
-- Chunking with overlap
-- Metadata-aware chunk formatting
-
-### C) Semantic + OCR-based comparison
-- Embedding-based semantic retrieval groundwork
-
-### D) LLM-assisted change classification
-- LLM orchestration with structured outputs and tool control
-
-## 5) Setup and Run
-
-## Prerequisites
-- Python 3.10+
-- ROS 2 Humble (for robot/simulation modules)
-- Optional but used in voice mode:
-  - `whisper.cpp` binary and model
-  - Piper binary and voice model
-  - OpenWakeWord model assets
-
-### Python dependencies
-There is no single locked dependency file at repo root yet.
-Install the core libraries used by this project:
-
-```bash
-pip install \
-  python-dotenv langchain langgraph langchain-core langchain-groq \
-  chromadb langchain-community langchain-huggingface \
-  sentence-transformers pymupdf python-pptx \
-  sounddevice numpy scipy openwakeword
+```
+mic ─▶ wake word ─▶ record ─▶ whisper.cpp ─┬─▶ movement keywords ──▶ ai/robot.py ─▶ ROS 2
+                                           └─▶ LangGraph + Groq ──┬─▶ retrieve_context (Chroma)
+                                                                  ├─▶ move_robot / set_wander_mode ─▶ ai/robot.py
+                                                                  └─▶ timer / pomodoro ─▶ face (UDP)
+reply ─▶ Piper TTS ─▶ speaker          emotion ─▶ face (UDP localhost:8765)
 ```
 
-### Run chatbot (text mode)
-```bash
-cd gangubai_ws/gangubAI
-python3 -m ai.chatbot.app
-```
+| Path | What it does |
+|---|---|
+| `ai/voice/app.py` | Main voice loop |
+| `ai/voice/wake_word.py`, `recorder.py`, `transcriber.py`, `tts.py` | OpenWakeWord, silence-based recording, whisper.cpp, Piper |
+| `ai/voice/config.py` | Paths to models/binaries, audio settings, `TTS_USE_APLAY` |
+| `ai/chatbot/graph.py` | LangGraph agent (Groq `gpt-oss-20b`, temperature 0.2) |
+| `ai/chatbot/config.py` | Model, RAG folder, system prompt |
+| `ai/chatbot/document_processor.py` | Indexes every PPTX/PDF in `ai/chatbot/Unit1/` into Chroma |
+| `ai/chatbot/tools/` | `retrieve_context`, `move_robot`, `set_wander_mode`, `timer`, `pomodoro` |
+| `ai/robot.py` | Sends `/motor_command` and `/wander_mode` to ROS 2 |
+| `ai/frontend/` | Pygame face + timer/pomodoro overlays, listens on UDP |
+| `ai/launcher/run_face_backend.py` | Starts face + voice loop with one command |
+| `ros2_ws/src/gangubai_control/` | Motor controller (GPIO or sim) and wander controller |
+| `ros2_ws/src/gangubai_description/` | URDF and Gazebo cliff test world |
 
-### Run the Pygame face frontend
+## Setup
+
+Requirements: Python 3.10+, ROS 2 Humble, a `GROQ_API_KEY` in `.env`.
+
 ```bash
-cd gangubai_ws/gangubAI
 pip install -r requirements.txt
-python3 -m ai.frontend.app
 ```
 
-The voice and chatbot entrypoints now broadcast emotion updates locally, so the
-frontend will react to live turns when they are running at the same time.
+These local assets are not in git. Set their paths in `ai/voice/config.py`:
 
-To subscribe through ROS instead of local UDP:
+- `whisper.cpp/` — built `whisper-cli` and `ggml-base.en.bin`
+- `piper/` — Piper binary and voice `.onnx`
+- `wakeword_models/` — `hi_gungu_bai.onnx` (+ optional `melspectrogram.onnx`, `embedding_model.onnx`)
+
+Speech output: `TTS_USE_APLAY = True` for the Pi with the MAX98357A amp, `False` for laptop speakers.
+
+The RAG index is built on first run into `.gangubai_db_hf/`.
+Delete that folder after adding or removing slides so it is rebuilt.
+
+## Run
+
+Terminal 1 — ROS (pick one):
 
 ```bash
-python3 -m ai.frontend.app --ros-bridge --ros-emotion-topic /robot_emotion
-```
+cd ros2_ws && source /opt/ros/humble/setup.bash && colcon build && source install/setup.bash
 
-### Run full voice loop
-```bash
-cd gangubai_ws/gangubAI
-python3 -m ai.voice.app
-```
-
-Useful options:
-```bash
-python3 -m ai.voice.app --ptt
-```
-
-### Build and launch ROS stack
-```bash
-cd gangubai_ws/gangubAI/ros2_ws
-source /opt/ros/humble/setup.bash
-colcon build
-source install/setup.bash
+# Gazebo simulation
 ros2 launch gangubai_control motor_control.launch.py simulate:=true wander_require_cliff_data:=false
+
+# Real robot (keep cliff safety on)
+ros2 launch gangubai_control motor_control.launch.py
 ```
 
-### Run frontend + backend AI + Gazebo together
-Use 3 terminals (4 if you also want text chatbot):
-
-Terminal 1 (ROS + Gazebo):
+Terminal 2 — face + voice:
 
 ```bash
-cd ~/gangubai_ws/gangubAI/ros2_ws
-source /opt/ros/humble/setup.bash
-colcon build
-source install/setup.bash
-ros2 launch gangubai_control motor_control.launch.py simulate:=true wander_require_cliff_data:=false
+source /opt/ros/humble/setup.bash && source ros2_ws/install/setup.bash
+python3 -m ai.launcher.run_face_backend --fullscreen
 ```
 
-Terminal 2 (Frontend face UI):
+Voice logs go to `voice_backend.log`. Face keys: `1`–`8` emotions, `F` fullscreen, `Esc`/`Q` quit.
 
-```bash
-cd ~/gangubai_ws/gangubAI
-source .venv/bin/activate
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-python3 -m ai.frontend.app --ros-bridge --ros-emotion-topic /robot_emotion
-```
-
-Terminal 3 (Backend AI voice loop):
-
-```bash
-cd ~/gangubai_ws/gangubAI
-source .venv/bin/activate
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-python3 -m ai.voice.app --ptt
-```
-
-Optional Terminal 4 (text chatbot backend instead of voice):
-
-```bash
-cd ~/gangubai_ws/gangubAI
-source .venv/bin/activate
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-python3 -m ai.chatbot.app
-```
-
-### Run frontend and backend together (single terminal)
-If you want to stay on the Pygame frontend screen all the time, use:
-
-```bash
-cd ~/gangubai_ws/gangubAI
-source .venv/bin/activate
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-python3 -m ai.launcher.run_face_backend --ros-bridge --backend-mode wakeword --fullscreen
-```
-
-Notes:
-- This starts `ai.voice.app` in the background with `--no-keyboard-ptt` so wakeword works without terminal focus.
-- Backend logs are written to `voice_backend.log` in the current directory.
-
-## 6) Relevant Project Paths
-
-- `ai/chatbot/document_processor.py`
-- `ai/chatbot/graph.py`
-- `ai/chatbot/tools/rag_tools.py`
-- `ai/chatbot/tools/ros_tools.py`
-- `ai/voice/app.py`
-- `ai/voice/transcriber.py`
-- `ai/voice/tts.py`
-- `ai/voice/wake_word.py`
-- `ros2_ws/src/gangubai_control/gangubai_control/motor_controller_node.py`
-- `ros2_ws/src/gangubai_control/gangubai_control/wander_controller_node.py`
-
-## 7) Notes
-
-- The repository intentionally ignores heavy local assets (`piper/`, `whisper.cpp/`, `wakeword_models/`) via `.gitignore`.
-- Configure paths for local binaries/models in `ai/voice/config.py`.
-- For safety, keep `wander_require_cliff_data:=true` on real hardware deployments.
+You can also run the parts separately: `python3 -m ai.voice.app` and `python3 -m ai.frontend.app`.
+`langgraph.json` lets you open the agent in LangGraph Studio.

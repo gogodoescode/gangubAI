@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from time import time
 from typing import Literal
 
 
@@ -15,40 +14,22 @@ def format_mmss(seconds: float) -> str:
 
 @dataclass(slots=True)
 class CountdownTimer:
-    """Simple countdown timer with pause and reset support."""
+    """Simple countdown timer."""
 
     duration_s: float
     remaining_s: float = field(init=False)
     running: bool = False
-    last_tick_s: float = field(default_factory=time)
 
     def __post_init__(self) -> None:
         self.remaining_s = max(0.0, float(self.duration_s))
 
     def start(self) -> None:
         self.running = True
-        self.last_tick_s = time()
-
-    def pause(self) -> None:
-        self.running = False
-
-    def toggle(self) -> None:
-        if self.running:
-            self.pause()
-        else:
-            self.start()
-
-    def reset(self, duration_s: float | None = None) -> None:
-        if duration_s is not None:
-            self.duration_s = max(0.0, float(duration_s))
-        self.remaining_s = max(0.0, float(self.duration_s))
-        self.last_tick_s = time()
 
     def update(self, dt_s: float) -> None:
         if not self.running or self.remaining_s <= 0.0:
             return
         self.remaining_s = max(0.0, self.remaining_s - max(0.0, dt_s))
-        self.last_tick_s = time()
         if self.remaining_s <= 0.0:
             self.running = False
 
@@ -80,16 +61,6 @@ class PomodoroSession:
 
     def start(self) -> None:
         self.running = True
-
-    def pause(self) -> None:
-        self.running = False
-
-    def reset(self) -> None:
-        self.current_cycle = 1
-        self.phase = "focus"
-        self.remaining_s = self.work_seconds
-        self.elapsed_s = 0.0
-        self.running = False
 
     def _advance_phase(self, overflow_s: float) -> None:
         if self.phase == "focus":
@@ -140,15 +111,7 @@ class PomodoroSession:
         return (self.cycles * self.work_seconds) + (max(0, self.cycles - 1) * self.break_seconds)
 
     @property
-    def phase_label(self) -> str:
-        if self.phase == "focus":
-            return "focus"
-        if self.phase == "break":
-            return "break"
-        return "done"
-
-    @property
     def status_text(self) -> str:
         if self.phase == "done":
             return "Pomodoro complete"
-        return f"{self.phase_label.title()} {self.current_cycle}/{self.cycles}"
+        return f"{self.phase.title()} {self.current_cycle}/{self.cycles}"

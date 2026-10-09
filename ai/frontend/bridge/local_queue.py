@@ -6,7 +6,6 @@ import json
 import socket
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
 
 from ai.frontend.config import DEFAULT_LISTEN_HOST, DEFAULT_LISTEN_PORT
 from ai.frontend.state import Emotion, EmotionEvent, normalize_emotion
@@ -111,12 +110,3 @@ def _parse_timestamp(value: str) -> float:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
     except Exception:
         return 0.0
-
-
-def coalesce_events(events: Iterable[EmotionEvent]) -> EmotionEvent | None:
-    """Return the most recent event from an iterable."""
-
-    latest: EmotionEvent | None = None
-    for event in events:
-        latest = event
-    return latest

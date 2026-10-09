@@ -5,8 +5,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Model ──────────────────────────────────────────────────
-MODEL_ID = "google_genai:gemini-2.5-flash-lite"
+# ── Model (Groq) ───────────────────────────────────────────
+GROQ_MODEL = "openai/gpt-oss-20b"
+# Low temperature keeps tool calls deterministic.
+TEMPERATURE = 0.2
 
 # ── Embeddings ─────────────────────────────────────────────
 EMBEDDING_MODEL = "BAAI/bge-large-en-v1.5"
@@ -16,11 +18,9 @@ CHROMA_COLLECTION = "gangubai_collection"
 PERSIST_DIRECTORY = ".gangubai_db_hf/"
 
 # ── RAG document sources (relative to repo root) ──────────
-RAG_FILES = [
-    os.path.join("ai", "chatbot", "Unit1", "ECC_1_Introduction to GenAI and Its Application.pptx"),
-    os.path.join("ai", "chatbot", "Unit1", "ECC_2_LLM basics and Evolution.pptx"),
-    os.path.join("ai", "chatbot", "Unit1", "ECC_3_NLP Basics_Terminologies_TaskOverview.pptx"),
-]
+# Every .pptx / .pdf in this folder is indexed.
+# Delete PERSIST_DIRECTORY after changing the folder contents to rebuild the index.
+RAG_DIR = os.path.join("ai", "chatbot", "Unit1")
 
 # ── System prompt ──────────────────────────────────────────
 SYSTEM_PROMPT = """\
@@ -59,7 +59,6 @@ Use this mapping:
 TOOLS
 You can use these tools:
 - retrieve_context: Search the knowledge base for academic or course material.
-- calculator: Do arithmetic.
 - move_robot: Move the robot physically (forward, backward, left, right, 360, stop).
 - set_wander_mode: Start or stop autonomous wandering behavior.
 - timer: Start a fullscreen timer overlay on the frontend.
@@ -77,7 +76,6 @@ Always search for examples like:
 
 Skip retrieve_context only for:
 - Casual chat like hello or how are you.
-- Calculator requests.
 - Movement commands.
 - Wander mode commands.
 - Timer and pomodoro requests.
