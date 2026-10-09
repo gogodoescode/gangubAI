@@ -71,7 +71,7 @@ def send_to_face(emotion: str, event: str = "emotion", payload: dict | None = No
 
 
 class FaceListener:
-    """Non-blocking UDP listener; returns only the newest packet."""
+    """Non-blocking UDP listener."""
 
     def __init__(self) -> None:
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -79,19 +79,20 @@ class FaceListener:
         self._socket.bind((config.FACE_HOST, config.FACE_PORT))
         self._socket.setblocking(False)
 
-    def poll_latest(self) -> dict | None:
-        latest = None
+    def poll(self) -> list[dict]:
+        """Return every packet received since the last call, oldest first."""
+        packets = []
         while True:
             try:
                 raw, _ = self._socket.recvfrom(8192)
             except OSError:
-                return latest
+                return packets
             try:
                 packet = json.loads(raw.decode("utf-8"))
             except ValueError:
                 continue
             if isinstance(packet, dict):
-                latest = packet
+                packets.append(packet)
 
     def close(self) -> None:
         self._socket.close()
@@ -334,8 +335,7 @@ class FaceApp:
                     elif event.type == pygame.KEYDOWN:
                         self._handle_key(event.key)
 
-                packet = self.listener.poll_latest()
-                if packet is not None:
+                for packet in self.listener.poll():
                     self._handle_packet(packet)
                 self.animator.update(dt_ms)
 
